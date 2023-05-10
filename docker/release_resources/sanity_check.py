@@ -1,6 +1,6 @@
 import random
 
-import concrete.numpy as hnp
+import concrete.numpy as cnp
 
 
 def main():
@@ -9,14 +9,14 @@ def main():
 
     n_bits = 3
 
-    compiler = hnp.NPFHECompiler(
+    compiler = cnp.Compiler(
         function_to_compile,
         {"x": "encrypted"},
     )
 
     print("Compiling...")
 
-    engine = compiler.compile_on_inputset(range(2 ** n_bits))
+    engine = compiler.compile(range(2 ** n_bits))
 
     inputs = []
     labels = []
@@ -29,7 +29,7 @@ def main():
     correct = 0
     for idx, (input_i, label_i) in enumerate(zip(inputs, labels), 1):
         print(f"Inference #{idx}")
-        result_i = engine.run(*input_i)
+        result_i = engine.encrypt_run_decrypt(*input_i)
 
         if result_i == label_i:
             correct += 1

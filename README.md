@@ -1,87 +1,146 @@
-
 <p align="center">
-  <img src="docs/_static/CN_logo.png">
+<!-- product name logo -->
+  <img width=600 src="https://user-images.githubusercontent.com/5758427/193612313-6b1124c7-8e3e-4e23-8b8c-57fd43b17d4f.png">
 </p>
 
-Concrete Numpy is an open-source set of tools which aims to simplify the use of fully homomorphic encryption (FHE) for data scientists.
+<p align="center">
+<!-- Version badge using shields.io -->
+  <a href="https://github.com/zama-ai/concrete-numpy/releases">
+    <img src="https://img.shields.io/github/v/release/zama-ai/concrete-numpy?style=flat-square">
+  </a>
+<!-- Link to docs badge using shields.io -->
+  <a href="https://docs.zama.ai/concrete-numpy/">
+    <img src="https://img.shields.io/badge/read-documentation-yellow?style=flat-square">
+  </a>
+<!-- Community forum badge using shields.io -->
+  <a href="https://community.zama.ai/c/concrete-numpy">
+    <img src="https://img.shields.io/badge/community%20forum-online-brightgreen?style=flat-square">
+  </a>
+<!-- Open source badge using shields.io -->
+  <a href="https://docs.zama.ai/concrete-numpy/developer/contributing">
+    <img src="https://img.shields.io/badge/we're%20open%20source-contributing.md-blue?style=flat-square">
+  </a>
+<!-- Follow on twitter badge using shields.io -->
+  <a href="https://twitter.com/zama_fhe">
+    <img src="https://img.shields.io/badge/follow-zama_fhe-blue?logo=twitter&style=flat-square">
+  </a>
+</p>
 
-With Concrete Numpy, data scientists can implement machine learning models using a subset of numpy that compiles to FHE. They will be able to train models with popular machine learning libraries and then convert the prediction functions of these models to FHE with concrete-numpy.
+:warning: Concrete Numpy is now integrated into [Concrete](https://github.com/zama-ai/concrete) (former package [`concrete-numpy`](https://pypi.org/project/concrete-numpy/) is replaced by [`concrete-python`](https://pypi.org/project/concrete-python/)). Read full announcement [here](https://www.zama.ai/post/announcing-concrete-v1-0-0)
 
-<!-- TOC -->
+**Concrete Numpy** is an open-source library which simplifies the use of fully homomorphic encryption (FHE) in Python.
 
-- [concrete-numpy](#concrete-numpy)
-    - [Links](#links)
-    - [For end users](#for-end-users)
-        - [Installation](#Installation)
-        - [A simple example](#a-simple-example-numpy-addition-in-fhe)
-    - [For developers](#for-developers)
-        - [Project setup](#project-setup)
-        - [Documenting](#documenting)
-        - [Developing](#developing)
-        - [Contributing](#contributing)
-    - [License](#license)
+FHE is a powerful cryptographic tool, which allows computation to be performed directly on encrypted data without needing to decrypt it first.
 
-<!-- /TOC -->
-# Links
+With FHE, you can build services that preserve the privacy of the users. FHE is also great against data breaches as everything is done on encrypted data. Even if the server is compromised, in the end no sensitive data is leaked.
 
-- [documentation](https://docs.zama.ai/concrete-numpy/main/)
-- [community website](https://community.zama.ai/c/concrete-numpy/7)
-- [machine learning examples](https://docs.zama.ai/concrete-numpy/main/user/advanced_examples/index.html)
-# For end users
+## Main features
+
+- Ability to compile Python functions (that may use NumPy within) to their FHE equivalents, to operate on encrypted data
+- Support for [large collection of operators](https://docs.zama.ai/concrete-numpy/getting-started/compatibility)
+- Partial support for floating points
+- Support for table lookups on integers
+- Support for integration with Client / Server architectures
 
 ## Installation
 
-The preferred way to use concrete-numpy is through docker. You can get the concrete-numpy docker image by  pulling the latest docker image:
-
-`docker pull zamafhe/concrete-numpy:latest`
-
-To install Concrete Numpy from PyPi, run the following:
-
-`pip install concrete-numpy`
-
-You can find more detailed installation instructions in [installing.md](docs/user/basics/installing.md)
+|               OS / HW                | Available on Docker | Available on PyPI |
+| :----------------------------------: | :-----------------: | :--------------: |
+|                Linux                 |         Yes         |       Yes        |
+|               Windows                |         Yes         |   Coming soon    |
+|     Windows Subsystem for Linux      |         Yes         |       Yes        |
+|            macOS (Intel)             |         Yes         |       Yes        |
+| macOS (Apple Silicon, ie M1, M2 etc) |    Yes (Rosetta)    |   Coming soon    |
 
 
-## A simple example: numpy addition in FHE
+The preferred way to install Concrete Numpy is through PyPI:
+
+```shell
+pip install concrete-numpy
+```
+
+You can get the concrete-numpy docker image by  pulling the latest docker image:
+
+```shell
+docker pull zamafhe/concrete-numpy:v0.10.0
+```
+
+You can find more detailed installation instructions in [installing.md](docs/getting-started/installing.md)
+
+## Getting started
 
 ```python
-import concrete.numpy as hnp
+import concrete.numpy as cnp
 
 def add(x, y):
     return x + y
 
+compiler = cnp.Compiler(add, {"x": "encrypted", "y": "encrypted"})
 inputset = [(2, 3), (0, 0), (1, 6), (7, 7), (7, 1), (3, 2), (6, 1), (1, 7), (4, 5), (5, 4)]
-compiler = hnp.NPFHECompiler(add, {"x": "encrypted", "y": "encrypted"})
 
 print(f"Compiling...")
-circuit = compiler.compile_on_inputset(inputset)
+circuit = compiler.compile(inputset)
+
+print(f"Generating keys...")
+circuit.keygen()
 
 examples = [(3, 4), (1, 2), (7, 7), (0, 0)]
 for example in examples:
-    result = circuit.run(*example)
+    encrypted_example = circuit.encrypt(*example)
+    encrypted_result = circuit.run(encrypted_example)
+    result = circuit.decrypt(encrypted_result)
     print(f"Evaluation of {' + '.join(map(str, example))} homomorphically = {result}")
 ```
 
-# For developers
+or if you have a simple function that you can decorate, and you don't care about explicit steps of key generation, encryption, evaluation and decryption:
 
-### Project setup
+```python
+import concrete.numpy as cnp
 
-Installation steps are described in [project_setup.md](docs/dev/howto/project_setup.md).
-Information about how to use Docker for development are available in [docker.md](docs/dev/howto/docker.md).
+@cnp.compiler({"x": "encrypted", "y": "encrypted"})
+def add(x, y):
+    return x + y
 
-### Documenting
+inputset = [(2, 3), (0, 0), (1, 6), (7, 7), (7, 1), (3, 2), (6, 1), (1, 7), (4, 5), (5, 4)]
 
-Some information about how to build the documentation of `concrete-numpy` are available in [documenting.md](docs/dev/howto/documenting.md). Notably, our documentation is pushed to [https://docs.zama.ai/concrete-numpy/](https://docs.zama.ai/concrete-numpy/).
+print(f"Compiling...")
+circuit = add.compile(inputset)
 
-### Developing
+examples = [(3, 4), (1, 2), (7, 7), (0, 0)]
+for example in examples:
+    result = circuit.encrypt_run_decrypt(*example)
+    print(f"Evaluation of {' + '.join(map(str, example))} homomorphically = {result}")
+```
 
-Some information about our terminology and the infrastructure of `concrete-numpy` are available in [terminology_and_structure.md](docs/dev/explanation/terminology_and_structure.md). An in-depth look at what is done in `concrete-numpy` is available in [compilation.md](docs/dev/explanation/compilation.md).
+## Documentation
 
-### Contributing
+Full, comprehensive documentation is available at [https://docs.zama.ai/concrete-numpy](https://docs.zama.ai/concrete-numpy).
 
-Information about how to contribute are available in [contributing.md](docs/dev/howto/contributing.md).
+## Target users
 
+Concrete Numpy is a generic library that supports a variety of use cases. Because of this flexibility,
+it doesn't provide primitives for specific use cases.
 
-# License
+If you have a specific use case, or a specific field of computation, you may want to build abstractions on top of Concrete Numpy.
+
+One such example is [Concrete ML](https://github.com/zama-ai/concrete-ml), which is built on top of Concrete Numpy to simplify Machine Learning oriented use cases.
+
+## Tutorials
+
+Various tutorials are proposed in the documentation to help you start writing homomorphic programs:
+
+- How to use Concrete Numpy with [Decorators](https://docs.zama.ai/concrete-numpy/tutorials/decorator)
+- Partial support of [Floating Points](https://docs.zama.ai/concrete-numpy/tutorials/floating_points)
+- How to perform [Table Lookup](https://docs.zama.ai/concrete-numpy/tutorials/table_lookups)
+
+More generally, if you have built awesome projects using Concrete Numpy, feel free to let us know and we'll link to it!
+
+## Need support?
+
+<a target="_blank" href="https://community.zama.ai">
+  <img src="https://user-images.githubusercontent.com/5758427/191792238-b132e413-05f9-4fee-bee3-1371f3d81c28.png">
+</a>
+
+## License
 
 This software is distributed under the BSD-3-Clause-Clear license. If you have any questions, please contact us at hello@zama.ai.

@@ -34,12 +34,13 @@ def islatest(args):
             )
 
             # Keep versions that are not release candidate
-            all_non_prerelease_version_infos = [
-                version_info
+            version_infos = [
+                VersionInfo.parse(version_str)
                 for version_str in all_versions_str
                 if VersionInfo.isvalid(version_str)
-                and (version_info := VersionInfo.parse(version_str))
-                and version_info.prerelease is None
+            ]
+            all_non_prerelease_version_infos = [
+                version_info for version_info in version_infos if version_info.prerelease is None
             ]
 
             all_non_prerelease_version_infos.append(new_version_info)
@@ -117,7 +118,8 @@ def set_version(args):
 
     version_str = strip_leading_v(args.version)
     if not VersionInfo.isvalid(version_str):
-        raise RuntimeError(f"Unable to validate version: {args.version}")
+        message = f"Unable to validate version: {args.version}"
+        raise RuntimeError(message)
 
     file_vars_set = load_file_vars_set(args.pyproject_file, args.file_vars)
 
@@ -131,7 +133,8 @@ def set_version(args):
         elif file_path.suffix == ".toml":
             update_variable_in_toml_file(file_path, var_name, version_str)
         else:
-            raise RuntimeError(f"Unsupported file extension: {file_path.suffix}")
+            message = f"Unsupported file extension: {file_path.suffix}"
+            raise RuntimeError(message)
 
 
 def get_variable_from_py_file(file_path: Path, var_name: str):
@@ -171,39 +174,6 @@ def get_variable_from_toml_file(file_path: Path, var_name: str):
         current_content = current_content[toml_key]
 
     return current_content
-
-
-def check_version(args):
-    """check-version command entry point."""
-
-    version_str_set = set()
-
-    file_vars_set = load_file_vars_set(args.pyproject_file, args.file_vars)
-
-    for file_var_str in sorted(file_vars_set):
-        print(f"Processing {file_var_str}")
-        file, var_name = file_var_str.split(":", 1)
-        file_path = Path(file).resolve()
-
-        if file_path.suffix == ".py":
-            version_str_set.update(get_variable_from_py_file(file_path, var_name))
-        elif file_path.suffix == ".toml":
-            version_str_set.add(get_variable_from_toml_file(file_path, var_name))
-        else:
-            raise RuntimeError(f"Unsupported file extension: {file_path.suffix}")
-
-    if len(version_str_set) == 0:
-        raise RuntimeError(f"No versions found in {', '.join(sorted(file_vars_set))}")
-    if len(version_str_set) > 1:
-        raise RuntimeError(
-            f"Found more than one version: {', '.join(sorted(version_str_set))}\n"
-            "Re-run make set-version"
-        )
-    # Now version_str_set len == 1
-    if not VersionInfo.isvalid((version := next(iter(version_str_set)))):
-        raise RuntimeError(f"Unable to validate version: {version}")
-
-    print(f"Found version {version} in all processed locations.")
 
 
 def main(args):
@@ -246,23 +216,6 @@ if __name__ == "__main__":
         ),
     )
     parser_set_version.set_defaults(entry_point=set_version)
-
-    parser_check_version = sub_parsers.add_parser("check-version")
-    parser_check_version.add_argument(
-        "--pyproject-file",
-        type=str,
-        default="pyproject.toml",
-        help="The path to a project's pyproject.toml file, defaults to $pwd/pyproject.toml",
-    )
-    parser_check_version.add_argument(
-        "--file-vars",
-        type=str,
-        nargs="+",
-        help=(
-            "A space separated list of file/path.{py, toml}:variable to update with the new version"
-        ),
-    )
-    parser_check_version.set_defaults(entry_point=check_version)
 
     cli_args = main_parser.parse_args()
 

@@ -12,7 +12,7 @@ isDockerBuildkit(){
 }
 
 isDockerContainer(){
-    [[ -e ./dockerenv ]]
+    [[ -e /.dockerenv ]]
 }
 
 LINUX_INSTALL_PYTHON=0
@@ -50,10 +50,10 @@ if [[ "${OS_NAME}" == "Linux" ]]; then
     PYTHON_PACKAGES=
     if [[ "${LINUX_INSTALL_PYTHON}" == "1" ]]; then
         PYTHON_PACKAGES="python3-pip \
-        python3.8 \
-        python3.8-dev \
-        python3.8-tk \
-        python3.8-venv \
+        python3 \
+        python3-dev \
+        python3-tk \
+        python3-venv \
         python-is-python3 \
         "
     fi
@@ -62,6 +62,7 @@ if [[ "${OS_NAME}" == "Linux" ]]; then
     ${SUDO_BIN:+$SUDO_BIN}apt-get install --no-install-recommends -y \
     build-essential \
     curl \
+    sqlite3 \
     ${PYTHON_PACKAGES:+$PYTHON_PACKAGES} \
     git \
     graphviz* \
@@ -74,7 +75,13 @@ if [[ "${OS_NAME}" == "Linux" ]]; then
     pip install --no-cache-dir poetry"
     eval "${SETUP_CMD}"
 elif [[ "${OS_NAME}" == "Darwin" ]]; then
-    brew install curl git graphviz jq make pandoc shellcheck
+    # Some problems with the git which is preinstalled on AWS virtual machines. Let's unlink it
+    # but not fail if it is not there, so use 'cat' as a hack to be sure that, even if set -x is
+    # activated later in this script, the status is still 0 == success
+    brew unlink git@2.35.1 | cat
+    brew install git
+
+    brew install curl graphviz jq make pandoc shellcheck sqlite
     python3 -m pip install -U pip
     python3 -m pip install poetry
 

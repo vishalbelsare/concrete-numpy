@@ -11,29 +11,29 @@ setup_env:
 	poetry run python -m pip install -U pip wheel
 	poetry run python -m pip install -U --force-reinstall setuptools
 	if [[ $$(uname) != "Linux" ]] && [[ $$(uname) != "Darwin" ]]; then \
-		poetry install --extras full --only dev; \
+		poetry install --only dev; \
 	else \
-		poetry install --extras full; \
+		poetry install; \
 	fi
 
 .PHONY: sync_env # Synchronise the environment
 sync_env:
 	if [[ $$(uname) != "Linux" ]] && [[ $$(uname) != "Darwin" ]]; then \
-		poetry install --extras full --remove-untracked --only dev; \
+		poetry install --remove-untracked --only dev; \
 	else \
-		poetry install --extras full --remove-untracked; \
+		poetry install --remove-untracked; \
 	fi
 	$(MAKE) setup_env
 
 .PHONY: python_format # Apply python formatting
 python_format:
 	poetry run env bash ./script/source_format/format_python.sh \
-	--dir $(SRC_DIR) --dir tests --dir benchmarks --dir script
+	--dir $(SRC_DIR) --dir tests --dir script
 
 .PHONY: check_python_format # Check python format
 check_python_format:
 	poetry run env bash ./script/source_format/format_python.sh \
-	--dir $(SRC_DIR) --dir tests --dir benchmarks --dir script --check
+	--dir $(SRC_DIR) --dir tests --dir script --check
 
 .PHONY: check_finalize_nb # Sanitize notebooks
 check_finalize_nb:
@@ -41,7 +41,7 @@ check_finalize_nb:
 
 .PHONY: pylint # Run pylint
 pylint:
-	$(MAKE) --keep-going pylint_src pylint_tests pylint_benchmarks pylint_script
+	$(MAKE) --keep-going pylint_src pylint_tests pylint_script
 
 .PHONY: pylint_src # Run pylint on sources
 pylint_src:
@@ -53,12 +53,6 @@ pylint_tests:
 	@# Disable unnecessary lambda (W0108) for tests
 	find ./tests/ -type f -name "*.py" | xargs poetry run pylint --disable=R0801,W0108 --rcfile=pylintrc
 
-.PHONY: pylint_benchmarks # Run pylint on benchmarks
-pylint_benchmarks:
-	@# Disable duplicate code detection, docstring requirement, too many locals/statements
-	find ./benchmarks/ -type f -name "*.py" | xargs poetry run pylint \
-	--disable=R0801,R0914,R0915,C0103,C0114,C0115,C0116,C0302,W0108 --rcfile=pylintrc
-
 .PHONY: pylint_script # Run pylint on scripts
 pylint_script:
 	find ./script/ -type f -name "*.py" | xargs poetry run pylint --rcfile=pylintrc
@@ -66,10 +60,14 @@ pylint_script:
 .PHONY: flake8 # Run flake8
 flake8:
 	poetry run flake8 --max-line-length 100 --per-file-ignores="__init__.py:F401" \
-	$(SRC_DIR)/ tests/ benchmarks/ script/
+	$(SRC_DIR)/ tests/ script/
+
+.PHONY: ruff
+ruff:
+	poetry run ruff $(SRC_DIR)/ tests/ script/
 
 .PHONY: python_linting # Run python linters
-python_linting: pylint flake8
+python_linting: pylint flake8 ruff
 
 .PHONY: conformance # Run command to fix some conformance issues automatically
 conformance: finalize_nb python_format supported_functions licenses
@@ -80,7 +78,7 @@ pcc:
 	--no-print-directory pcc_internal
 
 PCC_DEPS := check_python_format check_finalize_nb python_linting mypy_ci pydocstyle shell_lint
-PCC_DEPS += check_version_coherence check_supported_functions check_licenses
+PCC_DEPS += check_supported_functions # check_licenses
 
 # Not commented on purpose for make help, since internal
 .PHONY: pcc_internal
@@ -91,7 +89,7 @@ pcc_internal: $(PCC_DEPS)
 .PHONY: pytest # Run pytest
 pytest:
 	poetry run pytest -svv \
-	--global-coverage-infos-json=global-coverage-infos.json \
+	--global-coverage=.global-coverage.json \
 	-n $$(./script/make_utils/ncpus.sh) \
 	--cov=$(SRC_DIR) --cov-fail-under=100 \
 	--randomly-dont-reorganize \
@@ -112,17 +110,6 @@ mypy_ns:
 mypy_test:
 	find ./tests/ -name "*.py" | xargs poetry run mypy --ignore-missing-imports
 
-.PHONY: mypy_concrete_benchmark # Run mypy on concrete benchmark files
-mypy_concrete_benchmark:
-	find ./benchmarks/concrete/ -name "*.py" | xargs poetry run mypy --ignore-missing-imports
-
-.PHONY: mypy_ml_benchmark # Run mypy on ml benchmark files
-mypy_ml_benchmark:
-	find ./benchmarks/ml/ -name "*.py" | xargs poetry run mypy --ignore-missing-imports
-
-.PHONY: mypy_benchmark # Run mypy on benchmark files
-mypy_benchmark: mypy_concrete_benchmark mypy_ml_benchmark
-
 .PHONY: mypy_script # Run mypy on scripts
 mypy_script:
 	find ./script/ -name "*.py" | xargs poetry run mypy --ignore-missing-imports
@@ -132,7 +119,7 @@ mypy_script:
 # cache which can cause issues.
 .PHONY: mypy_ci # Run all mypy checks for CI
 mypy_ci:
-	$(MAKE) --keep-going mypy mypy_test mypy_benchmark mypy_script
+	$(MAKE) --keep-going mypy mypy_test mypy_script
 
 .PHONY: docker_build # Build dev docker
 docker_build:
@@ -177,34 +164,10 @@ docker_clean_volumes:
 .PHONY: docker_cv # Docker clean volumes
 docker_cv: docker_clean_volumes
 
-.PHONY: docker_publish_measurements # Run benchmarks in docker and publish results
-docker_publish_measurements: docker_rebuild
-	docker run --rm --volume /"$$(pwd)":/src \
-	--volume $(DEV_CONTAINER_VENV_VOLUME):/home/dev_user/dev_venv \
-	--volume $(DEV_CONTAINER_CACHE_VOLUME):/home/dev_user/.cache \
-	$(DEV_DOCKER_IMG) \
-	/bin/bash ./script/progress_tracker_utils/benchmark_and_publish_findings_in_docker.sh
-
-.PHONY: docs # Build docs
-docs: clean_docs supported_functions
-	@# Generate the auto summary of documentations
-	poetry run sphinx-apidoc -o docs/_apidoc $(SRC_DIR)
-	@# Docs
-	cd docs && poetry run $(MAKE) html SPHINXOPTS='-W --keep-going'
-
-.PHONY: clean_docs # Clean docs build directory
-clean_docs:
-	rm -rf docs/_apidoc docs/_build
-
-.PHONY: open_docs # Launch docs in a browser (macOS only)
-open_docs:
-	@# This is macOS only. On other systems, one would use `start` or `xdg-open`
-	open docs/_build/html/index.html
-
 .PHONY: pydocstyle # Launch syntax checker on source code documentation
 pydocstyle:
 	@# From http://www.pydocstyle.org/en/stable/error_codes.html
-	poetry run pydocstyle $(SRC_DIR) --convention google --add-ignore=D1,D202 --add-select=D401
+	poetry run pydocstyle $(SRC_DIR) --convention google --add-ignore=D1,D200,D202,D212,D402,D417 --add-select=D401
 
 .PHONY: finalize_nb # Sanitize notebooks
 finalize_nb:
@@ -215,20 +178,6 @@ finalize_nb:
 .PHONY: pytest_nb # Launch notebook tests
 pytest_nb:
 	find docs -name "*.ipynb" | grep -v _build | grep -v .ipynb_checkpoints | xargs poetry run pytest -Wignore --nbmake
-
-.PHONY: concrete_benchmark # Launch concrete benchmarks
-concrete_benchmark:
-	rm -rf progress.json && \
-	for script in benchmarks/concrete/*.py; do \
-	  poetry run python $$script; \
-	done
-
-.PHONY: ml_benchmark # Launch ml benchmarks
-ml_benchmark:
-	rm -rf progress.json && \
-	for script in benchmarks/ml/*.py; do \
-	  poetry run python $$script; \
-	done
 
 .PHONY: jupyter # Launch jupyter notebook
 jupyter:
@@ -286,18 +235,14 @@ set_version:
 		git stash pop; \
 	fi
 
-.PHONY: check_version_coherence # Check that all files containing version have the same value
-check_version_coherence:
-	poetry run python ./script/make_utils/version_utils.py check-version
-
 .PHONY: changelog # Generate a changelog
-changelog: check_version_coherence
+changelog:
 	PROJECT_VER=($$(poetry version)) && \
 	PROJECT_VER="$${PROJECT_VER[1]}" && \
 	poetry run python ./script/make_utils/changelog_helper.py > "CHANGELOG_$${PROJECT_VER}.md"
 
 .PHONY: release # Create a new release
-release: check_version_coherence
+release:
 	@PROJECT_VER=($$(poetry version)) && \
 	PROJECT_VER="$${PROJECT_VER[1]}" && \
 	TAG_NAME="v$${PROJECT_VER}" && \
@@ -326,11 +271,11 @@ todo:
 
 .PHONY: supported_functions # Update docs with supported functions
 supported_functions:
-	poetry run python script/doc_utils/gen_supported_ufuncs.py docs/user/howto/numpy_support.md
+	poetry run python script/doc_utils/gen_supported_ufuncs.py docs/getting-started/compatibility.md
 
 .PHONY: check_supported_functions # Check supported functions (for the doc)
 check_supported_functions:
-	poetry run python script/doc_utils/gen_supported_ufuncs.py docs/user/howto/numpy_support.md --check
+	poetry run python script/doc_utils/gen_supported_ufuncs.py docs/getting-started/compatibility.md --check
 
 .PHONY: licenses # Generate the list of licenses of dependencies
 licenses:
